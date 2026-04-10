@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         oTweakU (Oploverz & Samehadaku)
+// @name         oTweakU (Oploverz, Samehadaku & Anoboy)
 // @namespace    oTweakU
-// @version      2.1
-// @description  Anime web tweaks. Adblock, unified history tracker, and toggleable dark mode.
-// @match        *://*.oploverz.ltd/*
-// @match        *://*.oploverz.*/*
-// @match        *://*.samehadaku.*/*
+// @version      2.6
+// @description  Anime web tweaks. Adblock, unified history tracker, and force dark mode.
+// @match        *://*/*
+// @allFrames    true
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -15,13 +14,50 @@
 (function() {
     'use strict';
 
+    const isMainFrame = window.top === window.self;
+
     // =========================================
-    // BAGIAN 1: PENGHAPUSAN IKLAN
+    // SECTION 0: IFRAME WORKER
+    // =========================================
+    if (!isMainFrame) {
+        let isTrackerActive = false;
+
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.app === 'oTweakU' && event.data.action === 'init_tracker') {
+                if (isTrackerActive) return;
+                isTrackerActive = true;
+
+                setInterval(() => {
+                    const videoElement = document.querySelector('video');
+                    if (videoElement && videoElement.duration > 0) {
+                        event.source.postMessage({
+                            app: 'oTweakU',
+                            action: 'update_progress',
+                            currentTime: videoElement.currentTime,
+                            duration: videoElement.duration
+                        }, event.origin);
+                    }
+                }, 5000);
+            }
+        });
+        return;
+    }
+
+    // =========================================
+    // MAIN FRAME GUARD 
+    // =========================================
+    const hostname = window.location.hostname;
+    if (!hostname.includes('oploverz') && !hostname.includes('samehadaku') && !hostname.includes('anoboy')) {
+        return;
+    }
+
+    let currentSlug = null;
+    let currentEpisode = null;
+
+    // =========================================
+    // SECTION 1: AD REMOVAL
     // =========================================
     function handleAds() {
-        const hostname = window.location.hostname;
-
-        // --- IKLAN OPLOVERZ ---
         if (hostname.includes('oploverz')) {
             const fullScreenWrappers = document.querySelectorAll('div.fixed.inset-0');
             fullScreenWrappers.forEach(wrapper => {
@@ -64,14 +100,11 @@
             });
         }
 
-        // --- IKLAN SAMEHADAKU ---
         if (hostname.includes('samehadaku')) {
-            // 1. Iklan Video Player (Overlay)
             document.querySelectorAll('.player-iklan, #playerIklan1, #playerIklan2').forEach(el => {
                 el.style.setProperty('display', 'none', 'important');
             });
 
-            // 2. Iklan Banner Baris
             document.querySelectorAll('a[target="_blank"][rel*="nofollow"]').forEach(el => {
                 const img = el.querySelector('img');
                 if (img) {
@@ -85,7 +118,6 @@
                 }
             });
 
-            // 3. Iklan Hardcoded & Plugin Sosial
             const hardcodedUrls = ['t.me/samehadaku_care', 'winbu.net', 'instagram.com/samehadaku.care'];
             document.querySelectorAll('a').forEach(a => {
                 if (hardcodedUrls.some(url => a.href.includes(url))) {
@@ -93,7 +125,6 @@
                 }
             });
 
-            // Widget media sosial dan teks
             document.querySelectorAll('.followig, iframe[src*="facebook.com/plugins/like.php"]').forEach(el => {
                 el.style.setProperty('display', 'none', 'important');
             });
@@ -104,10 +135,19 @@
                 }
             });
         }
+
+        if (hostname.includes('anoboy')) {
+            document.querySelectorAll('.section a[href*="facebook.com/anoboych"]').forEach(el => {
+                const sectionParent = el.closest('.section');
+                if (sectionParent) {
+                    sectionParent.style.setProperty('display', 'none', 'important');
+                }
+            });
+        }
     }
 
     // =========================================
-    // BAGIAN 2: TEMA GELAP (BISA DI-TOGGLE)
+    // SECTION 2: DARK THEME TOGGLE
     // =========================================
     let isDarkMode = GM_getValue('dark_theme_enabled', true);
     let darkStyleElement = null;
@@ -121,10 +161,9 @@
             return;
         }
 
-        if (darkStyleElement) return; // Mencegah injeksi ganda
+        if (darkStyleElement) return;
 
         const darkThemeCSS = `
-            /* Aturan umum & Oploverz */
             body, html { background-color: #0f0f0f !important; color: #f1f1f1 !important; }
             [class*="bg-[#2d2850]"] { background-color: #0f0f0f !important; }
             [class*="bg-[#413a73]"] { background-color: #181818 !important; border-color: #303030 !important; }
@@ -133,7 +172,6 @@
             .text-card-foreground { color: #f1f1f1 !important; }
             .border { border-color: #303030 !important; }
 
-            /* Override Khusus Samehadaku */
             .wrapper, #content, .widget, .post-body, .megamenu { background-color: #0f0f0f !important; color: #f1f1f1 !important; border-color: #303030 !important; }
             .box-header, .widget-title, .title-section { background-color: #181818 !important; color: #fff !important; border-color: #303030 !important; }
             a { color: #3ea6ff !important; }
@@ -152,53 +190,99 @@
     }
 
     // =========================================
-    // BAGIAN 3: PELACAK RIWAYAT TONTONAN
+    // SECTION 3: WATCH HISTORY TRACKER
     // =========================================
     function formatTitle(slug) {
         return slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
     }
 
+    function formatTime(seconds) {
+        if (!seconds || isNaN(seconds)) return "00:00";
+        const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
     function recordHistory() {
         const path = window.location.pathname;
-        let slug, episodeNum;
 
-        // Regex untuk Oploverz: /series/[slug]/episode/[num]/
         const oploverzMatch = path.match(/\/series\/([^/]+)\/episode\/(\d+)/);
 
-        // Regex Fleksibel untuk Samehadaku: Menangkap /[slug]-episode-[num] dengan/tanpa string tambahan di belakang
-        const samehadakuMatch = path.match(/^\/([^/]+?)-episode-(\d+)/);
+        const stdMatch = path.match(/^\/([^/]+?)-episode-(\d+)/);
 
-        if (oploverzMatch) {
-            slug = oploverzMatch[1];
-            episodeNum = parseInt(oploverzMatch[2], 10);
-        } else if (samehadakuMatch) {
-            slug = samehadakuMatch[1];
-            episodeNum = parseInt(samehadakuMatch[2], 10);
+        if (hostname.includes('oploverz') && oploverzMatch) {
+            currentSlug = oploverzMatch[1];
+            currentEpisode = parseInt(oploverzMatch[2], 10);
+        } else if ((hostname.includes('samehadaku') || hostname.includes('anoboy')) && stdMatch) {
+            currentSlug = stdMatch[1];
+            currentEpisode = parseInt(stdMatch[2], 10);
         } else {
-            return; // Bukan halaman episode
+            return;
         }
 
-        const title = formatTitle(slug);
+        const title = formatTitle(currentSlug);
         let history = GM_getValue('anime_history', {});
 
-        if (!history[slug]) {
-            history[slug] = {
+        if (!history[currentSlug]) {
+            history[currentSlug] = {
                 title: title,
-                episodes: []
+                episodes: {}
             };
         }
 
-        if (!history[slug].episodes.includes(episodeNum)) {
-            history[slug].episodes.push(episodeNum);
-            history[slug].episodes.sort((a, b) => a - b);
+        if (!history[currentSlug].episodes[currentEpisode]) {
+            history[currentSlug].episodes[currentEpisode] = { currentTime: 0, duration: 0 };
             GM_setValue('anime_history', history);
         }
+
+        trackNativeVideoProgress();
+        wakeUpIframes();
     }
 
+    function wakeUpIframes() {
+        setInterval(() => {
+            document.querySelectorAll('iframe').forEach(iframe => {
+                try {
+                    iframe.contentWindow.postMessage({ app: 'oTweakU', action: 'init_tracker' }, '*');
+                } catch (e) {}
+            });
+        }, 3000);
+    }
+
+    function trackNativeVideoProgress() {
+        setInterval(() => {
+            if (!currentSlug || currentEpisode === null) return;
+
+            const videoElement = document.querySelector('video');
+            if (videoElement && videoElement.duration > 0) {
+                let history = GM_getValue('anime_history', {});
+                if (history[currentSlug] && history[currentSlug].episodes[currentEpisode]) {
+                    history[currentSlug].episodes[currentEpisode].currentTime = videoElement.currentTime;
+                    history[currentSlug].episodes[currentEpisode].duration = videoElement.duration;
+                    GM_setValue('anime_history', history);
+                }
+            }
+        }, 5000);
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.app === 'oTweakU' && event.data.action === 'update_progress') {
+            if (currentSlug && currentEpisode !== null) {
+                let history = GM_getValue('anime_history', {});
+                if (history[currentSlug] && history[currentSlug].episodes[currentEpisode]) {
+                    history[currentSlug].episodes[currentEpisode].currentTime = event.data.currentTime;
+                    history[currentSlug].episodes[currentEpisode].duration = event.data.duration;
+                    GM_setValue('anime_history', history);
+                }
+            }
+        }
+    });
+
     // =========================================
-    // BAGIAN 4: UI MODAL RIWAYAT
+    // SECTION 4: HISTORY MODAL UI
     // =========================================
     let isModalOpen = false;
+    let isEditMode = false;
 
     function injectModalStyles() {
         if (document.getElementById('vm-modal-styles')) return;
@@ -218,31 +302,54 @@
                 display: flex; justify-content: space-between; align-items: center;
             }
             #vm-history-header h2 { margin: 0; font-size: 1.2rem; color: #fff; }
+            .vm-header-actions { display: flex; gap: 12px; align-items: center; }
+
+            #vm-edit-btn {
+                background: #3ea6ff; color: #000; border: none; border-radius: 4px;
+                padding: 4px 10px; font-size: 0.85rem; font-weight: bold; cursor: pointer;
+            }
+            #vm-edit-btn.active { background: #ff4a4a; color: #fff; }
+
             #vm-close-btn {
                 background: none; border: none; color: #f1f1f1;
-                font-size: 1.5rem; cursor: pointer; padding: 0 8px;
+                font-size: 1.5rem; cursor: pointer; padding: 0; display: flex;
             }
             #vm-close-btn:hover { color: #ff4a4a; }
-            #vm-history-controls { padding: 16px; border-bottom: 1px solid #303030; }
+
+            #vm-history-controls { padding: 16px; border-bottom: 1px solid #303030; display: flex; gap: 8px; flex-direction: column; }
             #vm-history-search {
                 width: 100%; padding: 10px; border-radius: 6px;
                 background-color: #0f0f0f; color: #fff; border: 1px solid #303030;
                 box-sizing: border-box;
             }
-            #vm-history-content {
-                padding: 16px; overflow-y: auto; flex-grow: 1;
+
+            #vm-delete-actions { display: none; justify-content: flex-end; }
+            #vm-history-modal.edit-mode #vm-delete-actions { display: flex; }
+            #vm-delete-selected-btn {
+                background: #ff4a4a; color: #fff; border: none; border-radius: 4px;
+                padding: 6px 12px; font-size: 0.85rem; cursor: pointer; font-weight: bold;
             }
-            .vm-anime-item { margin-bottom: 16px; }
-            .vm-anime-title {
-                font-weight: bold; margin-bottom: 8px; color: #3ea6ff;
+
+            #vm-history-content { padding: 16px; overflow-y: auto; flex-grow: 1; }
+
+            .vm-anime-item { margin-bottom: 16px; display: flex; align-items: flex-start; gap: 10px; }
+            .vm-anime-checkbox {
+                display: none; margin-top: 5px; width: 16px; height: 16px;
+                accent-color: #ff4a4a; cursor: pointer;
             }
-            .vm-anime-episodes {
-                display: flex; flex-wrap: wrap; gap: 6px;
-            }
+            #vm-history-modal.edit-mode .vm-anime-checkbox { display: block; }
+
+            .vm-anime-data { flex-grow: 1; }
+            .vm-anime-title { font-weight: bold; margin-bottom: 8px; color: #3ea6ff; }
+            .vm-anime-episodes { display: flex; flex-wrap: wrap; gap: 6px; }
+
             .vm-ep-badge {
                 background-color: #303030; padding: 4px 10px;
                 border-radius: 4px; font-size: 0.85rem; color: #f1f1f1;
+                display: flex; flex-direction: column; align-items: center;
             }
+            .vm-ep-progress { font-size: 0.7rem; color: #aaa; margin-top: 2px; }
+
             #vm-history-backdrop {
                 position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
                 background: rgba(0,0,0,0.6); z-index: 999998; display: none;
@@ -266,10 +373,16 @@
         modal.innerHTML = `
             <div id="vm-history-header">
                 <h2>Riwayat Tontonan</h2>
-                <button id="vm-close-btn">&times;</button>
+                <div class="vm-header-actions">
+                    <button id="vm-edit-btn">Edit</button>
+                    <button id="vm-close-btn">&times;</button>
+                </div>
             </div>
             <div id="vm-history-controls">
                 <input type="text" id="vm-history-search" placeholder="Cari judul anime...">
+                <div id="vm-delete-actions">
+                    <button id="vm-delete-selected-btn">Hapus Terpilih</button>
+                </div>
             </div>
             <div id="vm-history-content"></div>
         `;
@@ -280,6 +393,34 @@
 
         document.getElementById('vm-history-search').addEventListener('input', (e) => {
             renderHistoryList(e.target.value.toLowerCase());
+        });
+
+        // Edit Button Logic
+        document.getElementById('vm-edit-btn').addEventListener('click', (e) => {
+            isEditMode = !isEditMode;
+            modal.classList.toggle('edit-mode', isEditMode);
+            e.target.classList.toggle('active', isEditMode);
+            e.target.textContent = isEditMode ? 'Batal' : 'Edit';
+
+            if (!isEditMode) {
+                document.querySelectorAll('.vm-anime-checkbox').forEach(cb => cb.checked = false);
+            }
+        });
+
+        document.getElementById('vm-delete-selected-btn').addEventListener('click', () => {
+            const checkboxes = document.querySelectorAll('.vm-anime-checkbox:checked');
+            if (checkboxes.length === 0) return;
+
+            let history = GM_getValue('anime_history', {});
+            checkboxes.forEach(cb => {
+                delete history[cb.dataset.slug];
+            });
+            GM_setValue('anime_history', history);
+
+            renderHistoryList(document.getElementById('vm-history-search').value.toLowerCase());
+
+            // Exit edit mode optionally (uncomment below if desired)
+            // document.getElementById('vm-edit-btn').click();
         });
     }
 
@@ -297,6 +438,9 @@
 
         let hasResults = false;
 
+        // Sort keys alphabetically by title
+        keys.sort((a, b) => history[a].title.localeCompare(history[b].title));
+
         keys.forEach(slug => {
             const data = history[slug];
             if (data.title.toLowerCase().includes(searchQuery)) {
@@ -305,6 +449,15 @@
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'vm-anime-item';
 
+                // Checkbox for Edit Mode
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'vm-anime-checkbox';
+                checkbox.dataset.slug = slug;
+
+                const dataDiv = document.createElement('div');
+                dataDiv.className = 'vm-anime-data';
+
                 const titleDiv = document.createElement('div');
                 titleDiv.className = 'vm-anime-title';
                 titleDiv.textContent = data.title;
@@ -312,15 +465,29 @@
                 const epsDiv = document.createElement('div');
                 epsDiv.className = 'vm-anime-episodes';
 
-                data.episodes.forEach(ep => {
+                const sortedEpisodes = Object.keys(data.episodes).sort((a, b) => parseInt(a) - parseInt(b));
+
+                sortedEpisodes.forEach(epKey => {
+                    const epData = data.episodes[epKey];
                     const epBadge = document.createElement('span');
                     epBadge.className = 'vm-ep-badge';
-                    epBadge.textContent = 'Ep ' + ep;
+
+                    let badgeHTML = `<span>Ep ${epKey}</span>`;
+
+                    if (epData.duration && epData.duration > 0) {
+                        const progressStr = `${formatTime(epData.currentTime)} / ${formatTime(epData.duration)}`;
+                        badgeHTML += `<span class="vm-ep-progress">${progressStr}</span>`;
+                    }
+
+                    epBadge.innerHTML = badgeHTML;
                     epsDiv.appendChild(epBadge);
                 });
 
-                itemDiv.appendChild(titleDiv);
-                itemDiv.appendChild(epsDiv);
+                dataDiv.appendChild(titleDiv);
+                dataDiv.appendChild(epsDiv);
+
+                itemDiv.appendChild(checkbox);
+                itemDiv.appendChild(dataDiv);
                 contentDiv.appendChild(itemDiv);
             }
         });
@@ -350,18 +517,20 @@
         } else {
             modal.style.display = 'none';
             backdrop.style.display = 'none';
+
+            // Reset edit mode on close
+            if (isEditMode) {
+                document.getElementById('vm-edit-btn').click();
+            }
         }
     }
 
     // =========================================
-    // EKSEKUSI
+    // EXECUTION
     // =========================================
-
-    // Daftarkan Menu Command
     GM_registerMenuCommand("Tampilkan Riwayat Anime", toggleHistoryModal);
     GM_registerMenuCommand("Toggle Dark Mode", toggleDarkTheme);
 
-    // Tombol Pintasan (Alt + H)
     document.addEventListener('keydown', (e) => {
         if (e.altKey && e.key.toLowerCase() === 'h') {
             e.preventDefault();
