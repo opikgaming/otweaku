@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AxionPocket">
+    <title>AxionPocket</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        orange: {
+                            500: '#ff8c00', // Custom orange accent
+                        },
+                        gray: {
+                            900: '#0a0a0a', // Almost black for cards
+                            800: '#1a1a1a', // Borders
+                            400: '#9ca3af', // Subtext
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { 
+            background-color: #000000; 
+            color: #ffffff; 
+            -webkit-tap-highlight-color: transparent; 
+        }
+        /* Hide scrollbar for clean mobile look */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        /* Utility to truncate multi-line text */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;  
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased pb-6 h-screen flex flex-col relative">
+
+    <!-- Header -->
+    <header class="bg-black border-b border-gray-800 px-4 py-4 flex justify-between items-center shrink-0">
+        <h1 class="text-xl font-bold text-orange-500 tracking-wider flex items-center gap-2">
+            <i data-lucide="book-open" class="w-5 h-5"></i>
+            AxionPocket
+        </h1>
+        <div class="flex gap-2">
+            <button id="settingsBtn" class="p-2 bg-gray-900 rounded-md border border-gray-800 text-gray-400 active:bg-gray-800 transition-colors">
+                <i data-lucide="settings" class="w-4 h-4"></i>
+            </button>
+            <button id="refreshBtn" class="p-2 bg-gray-900 rounded-md border border-gray-800 text-orange-500 active:bg-gray-800 transition-colors">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="flex border-b border-gray-800 shrink-0">
+        <button id="tab-manga" class="flex-1 py-3 text-center text-orange-500 border-b-2 border-orange-500 font-medium text-sm transition-colors">
+            Manga History
+        </button>
+        <button id="tab-anime" class="flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent font-medium text-sm transition-colors">
+            Anime History
+        </button>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-y-auto px-4 py-4" id="content-area">
+        <!-- Loading State -->
+        <div id="loading" class="flex flex-col items-center justify-center h-full text-gray-400">
+            <i data-lucide="loader" class="w-8 h-8 animate-spin text-orange-500 mb-2"></i>
+            <p class="text-sm">Fetching database...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-state" class="hidden flex-col items-center justify-center h-full text-red-400 text-center">
+            <i data-lucide="alert-circle" class="w-8 h-8 mb-2"></i>
+            <p class="text-sm" id="error-message">Failed to load data.</p>
+        </div>
+
+        <!-- Manga Container -->
+        <div id="manga-container" class="hidden flex flex-col gap-3"></div>
+
+        <!-- Anime Container -->
+        <div id="anime-container" class="hidden flex flex-col gap-3"></div>
+    </main>
+
+    <!-- Settings / Token Modal -->
+    <div id="settings-modal" class="hidden absolute inset-0 bg-black/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
+        <div class="bg-gray-900 border border-gray-800 p-5 rounded-lg w-full max-w-sm flex flex-col gap-4 shadow-2xl">
+            <div class="flex items-center gap-2 mb-2">
+                <i data-lucide="key" class="w-5 h-5 text-orange-500"></i>
+                <h2 class="text-lg font-bold text-white">GitHub Access</h2>
+            </div>
+            
+            <p class="text-xs text-gray-400">Your token is stored safely in this browser and will not be shared.</p>
+            
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-semibold text-gray-400 uppercase tracking-wider">GitHub PAT</label>
+                <input type="password" id="token-input" placeholder="ghp_xxxxxxxxxxxx" class="bg-black border border-gray-800 text-white text-sm rounded-md p-2.5 focus:outline-none focus:border-orange-500 w-full font-mono">
+            </div>
+
+            <div class="flex justify-end gap-3 mt-4">
+                <button id="closeSettingsBtn" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">Cancel</button>
+                <button id="saveTokenBtn" class="px-4 py-2 bg-orange-500 text-black text-sm font-bold rounded-md hover:bg-orange-600 transition-colors">Save & Reload</button>
+            </div>
+            
+            <button id="clearTokenBtn" class="mt-2 text-xs text-red-500 font-medium text-left hover:underline">Clear saved token</button>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        // ==========================================
+        // PWA INJECTION (Makes it installable if hosted)
+        // ==========================================
+        (function injectPWA() {
+            // Inject Web Manifest
+            const manifest = {
+                name: "AxionPocket",
+                short_name: "AxionPocket",
+                display: "standalone",
+                start_url: location.href,
+                background_color: "#000000",
+                theme_color: "#000000",
+                icons: [{
+                    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ff8c00' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z'/%3E%3Cpath d='M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z'/%3E%3C/svg%3E",
+                    sizes: "512x512",
+                    type: "image/svg+xml"
+                }]
+            };
+            const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+            const manifestUrl = URL.createObjectURL(manifestBlob);
+            document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestUrl}">`);
+
+            // Inject Dummy Service Worker (Required for PWA Install Prompt)
+            if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+                const swCode = `
+                    self.addEventListener('install', (e) => self.skipWaiting());
+                    self.addEventListener('activate', (e) => self.clients.claim());
+                    self.addEventListener('fetch', (e) => {});
+                `;
+                const swBlob = new Blob([swCode], {type: 'application/javascript'});
+                const swUrl = URL.createObjectURL(swBlob);
+                navigator.serviceWorker.register(swUrl).catch(err => console.log('SW Register skipped (expected on non-https/localhost)'));
+            }
+        })();
+
+        // ==========================================
+        // CONFIGURATION
+        // ==========================================
+        // The token is now handled via localStorage dynamically!
+        const REPO_OWNER = 'opikgaming';
+        const REPO_NAME = 'ore-no-database-da';
+        const FILE_PATH = 'anm_data.json';
+        // ==========================================
+
+        // DOM Elements
+        const refreshBtn = document.getElementById('refreshBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const tabManga = document.getElementById('tab-manga');
+        const tabAnime = document.getElementById('tab-anime');
+        const mangaContainer = document.getElementById('manga-container');
+        const animeContainer = document.getElementById('anime-container');
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error-state');
+        const errorMessage = document.getElementById('error-message');
+        
+        // Modal Elements
+        const settingsModal = document.getElementById('settings-modal');
+        const tokenInput = document.getElementById('token-input');
+        const saveTokenBtn = document.getElementById('saveTokenBtn');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const clearTokenBtn = document.getElementById('clearTokenBtn');
+
+        // State
+        let currentTab = 'manga'; // 'manga' or 'anime'
+        let cachedData = null;
+
+        // Settings / Modal Event Listeners
+        settingsBtn.addEventListener('click', () => {
+            tokenInput.value = localStorage.getItem('axion_github_token') || '';
+            settingsModal.classList.remove('hidden');
+        });
+
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+
+        saveTokenBtn.addEventListener('click', () => {
+            const val = tokenInput.value.trim();
+            if (val) {
+                localStorage.setItem('axion_github_token', val);
+                settingsModal.classList.add('hidden');
+                fetchData(true);
+            }
+        });
+
+        clearTokenBtn.addEventListener('click', () => {
+            localStorage.removeItem('axion_github_token');
+            tokenInput.value = '';
+            cachedData = null;
+            mangaContainer.innerHTML = '';
+            animeContainer.innerHTML = '';
+            settingsModal.classList.add('hidden');
+            checkTokenAndFetch();
+        });
+
+        // Tab Event Listeners
+        refreshBtn.addEventListener('click', () => fetchData(true));
+        tabManga.addEventListener('click', () => switchTab('manga'));
+        tabAnime.addEventListener('click', () => switchTab('anime'));
+
+        function switchTab(tab) {
+            currentTab = tab;
+            
+            // Update Tab UI
+            if (tab === 'manga') {
+                tabManga.classList.add('text-orange-500', 'border-orange-500');
+                tabManga.classList.remove('text-gray-400', 'border-transparent');
+                tabAnime.classList.remove('text-orange-500', 'border-orange-500');
+                tabAnime.classList.add('text-gray-400', 'border-transparent');
+                
+                if (cachedData) {
+                    mangaContainer.classList.remove('hidden');
+                    animeContainer.classList.add('hidden');
+                }
+            } else {
+                tabAnime.classList.add('text-orange-500', 'border-orange-500');
+                tabAnime.classList.remove('text-gray-400', 'border-transparent');
+                tabManga.classList.remove('text-orange-500', 'border-orange-500');
+                tabManga.classList.add('text-gray-400', 'border-transparent');
+                
+                if (cachedData) {
+                    animeContainer.classList.remove('hidden');
+                    mangaContainer.classList.add('hidden');
+                }
+            }
+        }
+
+        async function fetchData(forceRefresh = false) {
+            const githubToken = localStorage.getItem('axion_github_token');
+            
+            if (!githubToken) {
+                loadingDiv.classList.add('hidden');
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('flex');
+                errorMessage.textContent = 'Please configure your GitHub Token in settings.';
+                settingsModal.classList.remove('hidden'); // Auto show settings if no token
+                return;
+            }
+
+            if (!forceRefresh && cachedData) return;
+
+            // Show Loading
+            loadingDiv.classList.remove('hidden');
+            errorDiv.classList.add('hidden');
+            mangaContainer.classList.add('hidden');
+            animeContainer.classList.add('hidden');
+
+            // Add spin animation to refresh button (Lucide converts <i> to <svg>)
+            const refreshIcon = refreshBtn.querySelector('svg') || refreshBtn.querySelector('i');
+            if(refreshIcon) refreshIcon.classList.add('animate-spin');
+
+            const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `token ${githubToken}`,
+                        'Accept': 'application/vnd.github.v3.raw' // Gets raw file instead of base64
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        localStorage.removeItem('axion_github_token'); // Clear bad token
+                        settingsModal.classList.remove('hidden'); // Force user to re-enter
+                        throw new Error('Unauthorized. Token is invalid or expired.');
+                    }
+                    if (response.status === 404) {
+                        throw new Error('Database file not found in repository.');
+                    }
+                    throw new Error(`GitHub API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                cachedData = data;
+                
+                renderManga(data.md_history_data, data.manga_meta);
+                renderAnime(data.anime_history);
+                
+                // Re-initialize icons so dynamically generated chevron icons render correctly
+                lucide.createIcons();
+
+                // Show current tab container
+                loadingDiv.classList.add('hidden');
+                if (currentTab === 'manga') {
+                    mangaContainer.classList.remove('hidden');
+                } else {
+                    animeContainer.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error(error);
+                loadingDiv.classList.add('hidden');
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('flex');
+                errorMessage.textContent = error.message;
+            } finally {
+                const refreshIcon = refreshBtn.querySelector('svg') || refreshBtn.querySelector('i');
+                if(refreshIcon) refreshIcon.classList.remove('animate-spin');
+            }
+        }
+
+        function formatTime(seconds) {
+            if (!seconds) return '00:00';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        function formatDate(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHours / 24);
+
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function getLabelColor(label) {
+            if (!label) return '';
+            const lower = label.toLowerCase();
+            if (lower === 'finished') return 'text-green-500 border-green-500/30 bg-green-500/10';
+            if (lower === 'dropped') return 'text-red-500 border-red-500/30 bg-red-500/10';
+            if (lower === 'watching' || lower === 'reading') return 'text-orange-500 border-orange-500/30 bg-orange-500/10';
+            return 'text-gray-400 border-gray-600 bg-gray-800';
+        }
+
+        function renderManga(mangaArray, metaObj) {
+            mangaContainer.innerHTML = '';
+            
+            if (!mangaArray || mangaArray.length === 0) {
+                mangaContainer.innerHTML = '<p class="text-center text-gray-400 py-10">No manga history found.</p>';
+                return;
+            }
+
+            // Grouping Manga by Title
+            const groupedManga = {};
+            mangaArray.forEach(item => {
+                const title = item.mangaTitle || 'Unknown Title';
+                if (!groupedManga[title]) {
+                    groupedManga[title] = {
+                        title: title,
+                        latestTimestamp: item.timestamp,
+                        chapters: []
+                    };
+                }
+                
+                // Update with the most recent timestamp for sorting later
+                if (item.timestamp > groupedManga[title].latestTimestamp) {
+                    groupedManga[title].latestTimestamp = item.timestamp;
+                }
+                groupedManga[title].chapters.push(item);
+            });
+
+            // Convert object to array and sort by latest timestamp
+            const sortedGroups = Object.values(groupedManga).sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+
+            sortedGroups.forEach(group => {
+                const meta = metaObj && metaObj[group.title] ? metaObj[group.title] : {};
+                const label = meta.label || '';
+                const labelStyle = getLabelColor(label);
+
+                // Sort chapters inside the group by timestamp descending
+                group.chapters.sort((a, b) => b.timestamp - a.timestamp);
+
+                const card = document.createElement('div');
+                card.className = "bg-gray-900 border border-gray-800 rounded-md p-3 flex flex-col gap-2";
+                
+                // Create bulleted list of chapter links
+                const chaptersHtml = group.chapters.map(ch => 
+                    `<a href="${ch.url || '#'}" target="_blank" class="text-orange-500 text-sm font-medium hover:underline whitespace-nowrap">${ch.chapterStr}</a>`
+                ).join('<span class="text-gray-700 text-xs px-1">•</span>');
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-2">
+                        <h3 class="text-white font-medium text-sm leading-snug line-clamp-2">${group.title}</h3>
+                        <span class="text-xs text-gray-400 shrink-0 mt-0.5">${formatDate(group.latestTimestamp)}</span>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap mt-1">
+                        ${label ? `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm border shrink-0 ${labelStyle}">${label}</span>` : ''}
+                        <div class="flex flex-wrap items-center gap-1">
+                            ${chaptersHtml}
+                        </div>
+                    </div>
+                `;
+                mangaContainer.appendChild(card);
+            });
+        }
+
+        // Helper to generate episode HTML
+        function createEpisodeHTML(ep) {
+            let progressPercent = 0;
+            let timeStr = '00:00 / 00:00';
+            
+            if (ep.data && ep.data.duration > 0) {
+                progressPercent = Math.min((ep.data.currentTime / ep.data.duration) * 100, 100);
+                timeStr = `${formatTime(ep.data.currentTime)} / ${formatTime(ep.data.duration)}`;
+            }
+
+            return `
+                <div class="mt-1">
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <a href="${ep.data.url || '#'}" target="_blank" class="text-orange-500 font-medium hover:underline">
+                            Episode ${ep.num}
+                        </a>
+                        <span class="text-gray-400">${timeStr}</span>
+                    </div>
+                    <div class="w-full bg-black rounded-sm h-1.5 overflow-hidden">
+                        <div class="bg-orange-500 h-full rounded-sm" style="width: ${progressPercent}%"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderAnime(animeObj) {
+            animeContainer.innerHTML = '';
+
+            if (!animeObj || Object.keys(animeObj).length === 0) {
+                animeContainer.innerHTML = '<p class="text-center text-gray-400 py-10">No anime history found.</p>';
+                return;
+            }
+
+            // Convert to array and map all episodes sorted by episode number descending
+            const animeList = Object.keys(animeObj).map(key => {
+                const anime = animeObj[key];
+                const episodes = anime.episodes || {};
+                
+                // Array of {num: 5, data: {...}} sorted newest first
+                const episodesList = Object.keys(episodes).map(epKey => ({
+                    num: parseInt(epKey, 10),
+                    data: episodes[epKey]
+                })).filter(ep => !isNaN(ep.num)).sort((a, b) => b.num - a.num);
+
+                return {
+                    id: key,
+                    title: anime.title || key,
+                    label: anime.label || '',
+                    episodesList
+                };
+            });
+
+            // Sort alphabetically for consistency since no timestamps
+            animeList.sort((a, b) => a.title.localeCompare(b.title));
+
+            animeList.forEach(anime => {
+                const labelStyle = getLabelColor(anime.label);
+                
+                // Separate latest episode and older episodes
+                const latestEp = anime.episodesList[0];
+                const olderEps = anime.episodesList.slice(1);
+
+                const card = document.createElement('div');
+                card.className = "bg-gray-900 border border-gray-800 rounded-md p-3 flex flex-col gap-2";
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-2 ${olderEps.length > 0 ? 'cursor-pointer select-none' : ''}" 
+                         ${olderEps.length > 0 ? `onclick="const content = this.parentElement.querySelector('.older-eps'); content.classList.toggle('hidden'); this.querySelector('.chevron-icon').classList.toggle('rotate-180');"` : ''}>
+                        <h3 class="text-white font-medium text-sm leading-snug line-clamp-2">${anime.title}</h3>
+                        <div class="flex items-center gap-2 shrink-0">
+                            ${anime.label ? `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm border shrink-0 ${labelStyle}">${anime.label}</span>` : ''}
+                            ${olderEps.length > 0 ? `<i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform duration-200 chevron-icon"></i>` : ''}
+                        </div>
+                    </div>
+                    
+                    ${latestEp ? createEpisodeHTML(latestEp) : '<span class="text-xs text-gray-500">No episodes logged</span>'}
+
+                    ${olderEps.length > 0 ? `
+                        <div class="older-eps hidden flex flex-col gap-2 pt-2 mt-1 border-t border-gray-800">
+                            ${olderEps.map(ep => createEpisodeHTML(ep)).join('')}
+                        </div>
+                    ` : ''}
+                `;
+                animeContainer.appendChild(card);
+            });
+        }
+
+        // Check token on initial load
+        function checkTokenAndFetch() {
+            if (!localStorage.getItem('axion_github_token')) {
+                settingsModal.classList.remove('hidden');
+                loadingDiv.classList.add('hidden');
+            } else {
+                fetchData();
+            }
+        }
+
+        checkTokenAndFetch();
+
+    </script>
+</body>
+</html>
