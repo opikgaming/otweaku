@@ -49,6 +49,14 @@
             -webkit-box-orient: vertical;  
             overflow: hidden;
         }
+        
+        /* Remove webkit clear button on search inputs to keep it clean */
+        input[type="search"]::-webkit-search-decoration,
+        input[type="search"]::-webkit-search-cancel-button,
+        input[type="search"]::-webkit-search-results-button,
+        input[type="search"]::-webkit-search-results-decoration {
+            -webkit-appearance:none;
+        }
     </style>
 </head>
 <body class="font-sans antialiased pb-6 h-screen flex flex-col relative">
@@ -83,7 +91,8 @@
     <div class="px-4 py-3 border-b border-gray-800 shrink-0 bg-black">
         <div class="relative">
             <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"></i>
-            <input type="text" id="searchInput" placeholder="Cari judul..." class="w-full bg-gray-900 border border-gray-800 text-white text-sm rounded-md pl-9 pr-3 py-2.5 focus:outline-none focus:border-orange-500 transition-colors">
+            <!-- Changed type to search and added autocomplete="off" to prevent password manager interference -->
+            <input type="search" id="searchInput" autocomplete="off" placeholder="Cari judul..." class="w-full bg-gray-900 border border-gray-800 text-white text-sm rounded-md pl-9 pr-3 py-2.5 focus:outline-none focus:border-orange-500 transition-colors">
         </div>
     </div>
 
