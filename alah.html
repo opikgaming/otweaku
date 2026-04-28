@@ -90,7 +90,7 @@
         <!-- Error State -->
         <div id="error-state" class="hidden flex-col items-center justify-center h-full text-red-400 text-center">
             <i data-lucide="alert-circle" class="w-8 h-8 mb-2"></i>
-            <p class="text-sm" id="error-message">Failed to load data.</p>
+            <p class="text-sm px-6" id="error-message">Failed to load data.</p>
         </div>
 
         <!-- Manga Container -->
@@ -166,7 +166,6 @@
         // ==========================================
         // CONFIGURATION
         // ==========================================
-        // The token is now handled via localStorage dynamically!
         const REPO_OWNER = 'opikgaming';
         const REPO_NAME = 'ore-no-database-da';
         const FILE_PATH = 'anm_data.json';
@@ -220,7 +219,11 @@
             mangaContainer.innerHTML = '';
             animeContainer.innerHTML = '';
             settingsModal.classList.add('hidden');
-            checkTokenAndFetch();
+            
+            loadingDiv.classList.add('hidden');
+            errorDiv.classList.remove('hidden');
+            errorDiv.classList.add('flex');
+            errorMessage.textContent = 'Token telah dihapus. Klik icon ⚙️ untuk memasukkan token baru.';
         });
 
         // Tab Event Listeners
@@ -262,8 +265,7 @@
                 loadingDiv.classList.add('hidden');
                 errorDiv.classList.remove('hidden');
                 errorDiv.classList.add('flex');
-                errorMessage.textContent = 'Please configure your GitHub Token in settings.';
-                settingsModal.classList.remove('hidden'); // Auto show settings if no token
+                errorMessage.textContent = 'Token GitHub belum diset. Klik icon ⚙️ di pojok kanan atas.';
                 return;
             }
 
@@ -284,7 +286,7 @@
             try {
                 const response = await fetch(url, {
                     headers: {
-                        'Authorization': `token ${githubToken}`,
+                        'Authorization': `Bearer ${githubToken}`,
                         'Accept': 'application/vnd.github.v3.raw' // Gets raw file instead of base64
                     }
                 });
@@ -292,11 +294,10 @@
                 if (!response.ok) {
                     if (response.status === 401) {
                         localStorage.removeItem('axion_github_token'); // Clear bad token
-                        settingsModal.classList.remove('hidden'); // Force user to re-enter
-                        throw new Error('Unauthorized. Token is invalid or expired.');
+                        throw new Error('Akses Ditolak (401). Token salah atau expired. Silakan set token baru di menu ⚙️.');
                     }
                     if (response.status === 404) {
-                        throw new Error('Database file not found in repository.');
+                        throw new Error('Database (404) tidak ditemukan. Pastikan token punya akses ke private repo kamu.');
                     }
                     throw new Error(`GitHub API Error: ${response.status}`);
                 }
@@ -514,7 +515,11 @@
         function checkTokenAndFetch() {
             if (!localStorage.getItem('axion_github_token')) {
                 settingsModal.classList.remove('hidden');
+                
                 loadingDiv.classList.add('hidden');
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('flex');
+                errorMessage.textContent = 'Menunggu token GitHub diset...';
             } else {
                 fetchData();
             }
