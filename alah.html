@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#000000">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="mobile-web-app-title" content="AxionPocket">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AxionPocket">
     <title>AxionPocket</title>
     
     <!-- Tailwind CSS -->
@@ -71,12 +71,20 @@
 
     <!-- Navigation Tabs -->
     <div class="flex border-b border-gray-800 shrink-0">
-        <button id="tab-manga" class="flex-1 py-3 text-center text-orange-500 border-b-2 border-orange-500 font-medium text-sm transition-colors">
+        <button id="tab-manga" class="flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent font-medium text-sm transition-colors">
             Manga History
         </button>
-        <button id="tab-anime" class="flex-1 py-3 text-center text-gray-400 border-b-2 border-transparent font-medium text-sm transition-colors">
+        <button id="tab-anime" class="flex-1 py-3 text-center text-orange-500 border-b-2 border-orange-500 font-medium text-sm transition-colors">
             Anime History
         </button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="px-4 py-3 border-b border-gray-800 shrink-0 bg-black">
+        <div class="relative">
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"></i>
+            <input type="text" id="searchInput" placeholder="Cari judul..." class="w-full bg-gray-900 border border-gray-800 text-white text-sm rounded-md pl-9 pr-3 py-2.5 focus:outline-none focus:border-orange-500 transition-colors">
+        </div>
     </div>
 
     <!-- Main Content Area -->
@@ -176,6 +184,7 @@
         const settingsBtn = document.getElementById('settingsBtn');
         const tabManga = document.getElementById('tab-manga');
         const tabAnime = document.getElementById('tab-anime');
+        const searchInput = document.getElementById('searchInput');
         const mangaContainer = document.getElementById('manga-container');
         const animeContainer = document.getElementById('anime-container');
         const loadingDiv = document.getElementById('loading');
@@ -190,8 +199,9 @@
         const clearTokenBtn = document.getElementById('clearTokenBtn');
 
         // State
-        let currentTab = 'manga'; // 'manga' or 'anime'
+        let currentTab = 'anime'; // Default to anime now!
         let cachedData = null;
+        let searchQuery = '';
 
         // Settings / Modal Event Listeners
         settingsBtn.addEventListener('click', () => {
@@ -224,6 +234,16 @@
             errorDiv.classList.remove('hidden');
             errorDiv.classList.add('flex');
             errorMessage.textContent = 'Token telah dihapus. Klik icon ⚙️ untuk memasukkan token baru.';
+        });
+
+        // Search Listener
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value.toLowerCase();
+            if (cachedData) {
+                renderManga(cachedData.md_history_data, cachedData.manga_meta);
+                renderAnime(cachedData.anime_history);
+                lucide.createIcons();
+            }
         });
 
         // Tab Event Listeners
@@ -277,7 +297,7 @@
             mangaContainer.classList.add('hidden');
             animeContainer.classList.add('hidden');
 
-            // Add spin animation to refresh button (Lucide converts <i> to <svg>)
+            // Add spin animation to refresh button
             const refreshIcon = refreshBtn.querySelector('svg') || refreshBtn.querySelector('i');
             if(refreshIcon) refreshIcon.classList.add('animate-spin');
 
@@ -308,7 +328,7 @@
                 renderManga(data.md_history_data, data.manga_meta);
                 renderAnime(data.anime_history);
                 
-                // Re-initialize icons so dynamically generated chevron icons render correctly
+                // Re-initialize icons
                 lucide.createIcons();
 
                 // Show current tab container
@@ -370,9 +390,19 @@
                 return;
             }
 
+            // Filter array based on search query
+            const filteredArray = mangaArray.filter(item => 
+                (item.mangaTitle || 'Unknown Title').toLowerCase().includes(searchQuery)
+            );
+
+            if (filteredArray.length === 0) {
+                mangaContainer.innerHTML = '<p class="text-center text-gray-500 py-10 text-sm">Tidak ada manga yang sesuai pencarian.</p>';
+                return;
+            }
+
             // Grouping Manga by Title
             const groupedManga = {};
-            mangaArray.forEach(item => {
+            filteredArray.forEach(item => {
                 const title = item.mangaTitle || 'Unknown Title';
                 if (!groupedManga[title]) {
                     groupedManga[title] = {
@@ -458,7 +488,7 @@
             }
 
             // Convert to array and map all episodes sorted by episode number descending
-            const animeList = Object.keys(animeObj).map(key => {
+            let animeList = Object.keys(animeObj).map(key => {
                 const anime = animeObj[key];
                 const episodes = anime.episodes || {};
                 
@@ -472,12 +502,28 @@
                     id: key,
                     title: anime.title || key,
                     label: anime.label || '',
+                    lastAccessed: anime.lastAccessed || 0, // Fallback ke 0 kalau nggak ada
                     episodesList
                 };
             });
 
-            // Sort alphabetically for consistency since no timestamps
-            animeList.sort((a, b) => a.title.localeCompare(b.title));
+            // Filter by search query
+            if (searchQuery) {
+                animeList = animeList.filter(anime => anime.title.toLowerCase().includes(searchQuery));
+            }
+
+            if (animeList.length === 0) {
+                animeContainer.innerHTML = '<p class="text-center text-gray-500 py-10 text-sm">Tidak ada anime yang sesuai pencarian.</p>';
+                return;
+            }
+
+            // Sort by lastAccessed (newest first), fallback to alphabetical
+            animeList.sort((a, b) => {
+                if (a.lastAccessed !== b.lastAccessed) {
+                    return b.lastAccessed - a.lastAccessed;
+                }
+                return a.title.localeCompare(b.title);
+            });
 
             animeList.forEach(anime => {
                 const labelStyle = getLabelColor(anime.label);
@@ -489,11 +535,15 @@
                 const card = document.createElement('div');
                 card.className = "bg-gray-900 border border-gray-800 rounded-md p-3 flex flex-col gap-2";
                 
+                // Tambahin last accessed info kalo ada
+                const timeAgoHtml = anime.lastAccessed ? `<span class="text-xs text-gray-400 shrink-0 mt-0.5">${formatDate(anime.lastAccessed)}</span>` : '';
+
                 card.innerHTML = `
                     <div class="flex justify-between items-start gap-2 ${olderEps.length > 0 ? 'cursor-pointer select-none' : ''}" 
                          ${olderEps.length > 0 ? `onclick="const content = this.parentElement.querySelector('.older-eps'); content.classList.toggle('hidden'); this.querySelector('.chevron-icon').classList.toggle('rotate-180');"` : ''}>
                         <h3 class="text-white font-medium text-sm leading-snug line-clamp-2">${anime.title}</h3>
                         <div class="flex items-center gap-2 shrink-0">
+                            ${timeAgoHtml}
                             ${anime.label ? `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm border shrink-0 ${labelStyle}">${anime.label}</span>` : ''}
                             ${olderEps.length > 0 ? `<i data-lucide="chevron-down" class="w-4 h-4 text-gray-400 transition-transform duration-200 chevron-icon"></i>` : ''}
                         </div>
@@ -525,6 +575,8 @@
             }
         }
 
+        // Trigger logic to show appropriate initial tab container based on currentTab state
+        switchTab(currentTab);
         checkTokenAndFetch();
 
     </script>
